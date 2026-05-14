@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.env/
+venv/
+ENV/
+
+# Environment variables
+.env.local
+.env.*.local
+*.env
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# Playwright browser binaries
+ms-playwright/
+
+# Local databases / indexes
+*.db
+*.sqlite3
+
+# FAISS indexes
+*.index
+*.faiss
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Scraper checkpoints
+*_checkpoint_*.json
+
+# Python package cache
+pip-wheel-metadata/
+
+# Mypy / Ruff / lint caches
+.mypy_cache/
+.ruff_cache/
+
+# Coverage reports
+coverage.xml
+
+# Node (if added later)
+node_modules/
+
+# Secrets / API keys
+secrets.json
+credentials.json
+
+data/shl_catalog.json
+data/faiss.index
+data/metadata.pkl
+shl_catalog_checkpoint_50.json
+shl_catalog_checkpoint_100.json
+shl_catalog_checkpoint_150.json
+shl_catalog_checkpoint_200.json
+shl_catalog_checkpoint_250.json
+shl_catalog_checkpoint_300.json
+shl_catalog_checkpoint_350.json
