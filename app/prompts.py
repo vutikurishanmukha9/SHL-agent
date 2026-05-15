@@ -84,48 +84,33 @@ def build_catalog_context(items: list) -> str:
     lines = ["## CATALOG DATA (recommend ONLY from these assessments)\n"]
     for i, item in enumerate(items, 1):
         lines.append(f"### {i}. {item['name']}")
-        lines.append(f"URL: {item['url']}")
-        if item.get("description"):
-            # truncate long descriptions
-            desc = item["description"]
-            if len(desc) > 350:
-                desc = desc[:350] + "…"
-            lines.append(f"Description: {desc}")
-        if item.get("measures"):
-            lines.append(f"Measures: {item['measures']}")
         if item.get("test_type_labels"):
-            lines.append(f"Test types: {', '.join(item['test_type_labels'])}")
-        if item.get("job_levels"):
-            lines.append(f"Job levels: {', '.join(item['job_levels'])}")
-        if item.get("duration_minutes"):
-            lines.append(f"Duration: {item['duration_minutes']} min")
-        if item.get("remote_testing") is not None:
-            lines.append(f"Remote testing: {item['remote_testing']}")
-        if item.get("adaptive") is not None:
-            lines.append(f"Adaptive: {item['adaptive']}")
+            lines.append(f"Type: {', '.join(item['test_type_labels'])}")
+        if item.get("description"):
+            # aggressively truncate long descriptions
+            desc = item["description"]
+            if len(desc) > 150:
+                desc = desc[:150] + "…"
+            lines.append(f"Description: {desc}")
         lines.append("")
 
     return "\n".join(lines)
 
 
 def build_comparison_context(items: list) -> str:
-    """Detailed format for comparison requests — show all fields."""
+    """Detailed format for comparison requests — show lean fields."""
     if not items:
         return "## ASSESSMENTS FOR COMPARISON\nNo matching assessments found."
 
     lines = ["## ASSESSMENTS FOR COMPARISON\n"]
     for item in items:
         lines.append(f"### {item['name']}")
-        lines.append(f"URL: {item['url']}")
-        lines.append(f"Description: {item.get('description', 'N/A')}")
+        lines.append(f"Type: {', '.join(item.get('test_type_labels', []))}")
         lines.append(f"Measures: {item.get('measures', 'N/A')}")
-        lines.append(f"Test types: {', '.join(item.get('test_type_labels', []))}")
-        lines.append(f"Test type codes: {', '.join(item.get('test_types', []))}")
-        lines.append(f"Job levels: {', '.join(item.get('job_levels', []))}")
-        lines.append(f"Duration: {item.get('duration_minutes', 'N/A')} min")
-        lines.append(f"Remote testing: {item.get('remote_testing', 'N/A')}")
-        lines.append(f"Adaptive/IRT: {item.get('adaptive', 'N/A')}")
-        lines.append(f"Languages: {', '.join(item.get('languages', []))}")
+        desc = item.get('description', 'N/A')
+        if len(desc) > 200:
+            desc = desc[:200] + "…"
+        lines.append(f"Description: {desc}")
         lines.append("")
 
     return "\n".join(lines)

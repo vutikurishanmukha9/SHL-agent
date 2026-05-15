@@ -339,20 +339,20 @@ async def run_chat(messages: List[Message]) -> ChatResponse:
         catalog_items = search(
             full_text, job_level=job_level, test_types=test_types, top_k=15
         )
-        catalog_context = build_catalog_context(catalog_items)
+        catalog_context = build_catalog_context(catalog_items[:5])
 
     # 4. Build system prompt (base + optional catalog context)
     system = SYSTEM_PROMPT
     if catalog_context:
         system = SYSTEM_PROMPT + "\n\n" + catalog_context
 
-    # 5. Convert to OpenAI-compatible message format
+    # 5. Convert to OpenAI-compatible message format (only send latest 4 to save prompt tokens)
     chat_messages = [
         {
             "role": "assistant" if m.role == "assistant" else "user",
             "content": m.content,
         }
-        for m in messages
+        for m in messages[-4:]
     ]
 
     # 6. LLM call — with specific exception handling
