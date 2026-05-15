@@ -8,7 +8,30 @@ This project goes beyond standard prototype implementation by introducing a prov
 
 ## Architectural Approach and System Design
 
-The application is structured into a deterministic pipeline to ensure speed, accuracy, and absolute zero hallucination. The architecture heavily favors deterministic heuristics over LLM routing where absolute precision is required.
+The application is structured into a deterministic pipeline to ensure speed, accuracy, and strictly grounded recommendations. The architecture heavily favors deterministic heuristics over LLM routing where absolute precision is required.
+
+### Architecture Flow
+```text
+User Query
+   ↓
+Intent Detection
+   ↓
+BM25 Retrieval
+   ↓
+LLM (Plan A)
+   ↓
+LLM (Plan B)
+   ↓
+Deterministic BM25 Fallback
+```
+
+### Technology Stack
+- **FastAPI**: Core framework for high-performance async routing
+- **BM25**: Local, dependency-free lexical retrieval
+- **OpenRouter**: Unified LLM provider access
+- **Pytest**: Native evaluation and testing
+- **httpx**: Lightweight async network client
+- **Railway**: Production deployment environment
 
 ### 1. Intent Detection and Orchestration Layer
 Before calling any LLM, incoming conversation histories are evaluated by a fast, regex-based intent classification system. Conversations are explicitly routed into one of four states:
@@ -18,7 +41,7 @@ Before calling any LLM, incoming conversation histories are evaluated by a fast,
 - **COMPARE:** The user explicitly requests the differences between specific named assessments.
 
 ### 2. Retrieval-First Catalog Search
-To prevent hallucinations and guarantee sub-millisecond retrieval, the system uses a hybrid BM25 and metadata search algorithm over the static `shl_catalog.json` snapshot. 
+To prevent hallucinations and guarantee low-latency retrieval, the system uses a hybrid BM25 and metadata search algorithm over the static `shl_catalog.json` snapshot. 
 - It actively strips marketing boilerplate from the search index.
 - It leverages a predefined `SYNONYM_TAGS` index for high-value assessments (e.g., OPQ32r) to improve semantic recall without the latency of heavy vector embeddings.
 
@@ -39,7 +62,7 @@ LLM providers fail due to rate limits, billing exhaustion, or simple cloud outag
 
 - **Plan A (Primary Premium Model):** The system first attempts to resolve the generation using the highly capable premium model (`google/gemini-2.5-flash`).
 - **Plan B (Configurable Free Fallback):** If Plan A encounters HTTP 402 (Payment Required), 429 (Rate Limit), or 5xx (Server Error), the system applies a short `asyncio.sleep(1)` backoff and routes the request to a highly available free tier model (`google/gemma-4-31b-it:free`).
-- **Plan C (Deterministic BM25 Nuclear Fallback):** If the entire LLM network layer collapses or timeouts occur across all models, the orchestration layer intercepts the failure. It bypasses generation entirely and manually constructs a valid JSON response schema directly from the BM25 retrieval results. 
+- **Plan C (Deterministic BM25 Fallback):** If the entire LLM network layer collapses or timeouts occur across all models, the orchestration layer intercepts the failure. It bypasses generation entirely and manually constructs a valid JSON response schema directly from the BM25 retrieval results. 
 
 The evaluator will always receive a valid schema and actual catalog recommendations, even with zero LLM API credits.
 
@@ -118,3 +141,12 @@ pip install -r requirements-dev.txt
 # Run pytest
 python -m pytest tests/ -v
 ```
+
+---
+
+## Limitations & Future Improvements
+
+- BM25 retrieval may miss semantically related queries without direct lexical overlap.
+- Free-tier LLM providers can occasionally experience rate limits or prompt token capping.
+- Comparison responses rely on catalog metadata presentation rather than deep psychometric analysis.
+- Future iterations could explore lightweight hybrid retrieval approaches (e.g., fast embeddings) once infrastructural dependencies allow.
