@@ -5,7 +5,7 @@ Architecture (per request):
 1. Guardrail check  — deterministic, no LLM, fast
 2. Intent detection — deterministic heuristics (regex + context signals)
 3. Retrieval        — BM25 + metadata re-rank over catalog
-4. LLM call         — Anthropic API with catalog context injected in system prompt
+4. LLM call         — OpenRouter API (OpenAI-compatible) with catalog context in system prompt
 5. Parse & validate — extract JSON block, validate URLs against catalog, return
 
 Intent types
@@ -22,16 +22,17 @@ import os
 import logging
 import httpx
 from typing import List, Dict, Optional, Tuple
-
+from dotenv import load_dotenv
 from app.models import Message, ChatResponse, Recommendation
 from app.retriever import search, get_by_names, extract_job_level, extract_test_types, CATALOG
 from app.prompts import SYSTEM_PROMPT, build_catalog_context, build_comparison_context
 from app.guardrails import check as guardrail_check, INJECTION_REPLY, OFF_TOPIC_REPLY
 
 logger = logging.getLogger(__name__)
-
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-20250514"
+load_dotenv(".env.local")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")  # configurable via env
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Pre-build a lowercase name→item lookup for fast validation
 _CATALOG_LOOKUP: Dict[str, Dict] = {item["name"].lower(): item for item in CATALOG}
@@ -148,25 +149,30 @@ def _extract_comparison_targets(text: str) -> List[str]:
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
 async def _call_llm(system: str, messages: List[Dict]) -> str:
-    """Call Anthropic claude-sonnet-4 and return raw text response."""
-    async with httpx.AsyncClient(timeout=28.0) as client:
+    """Call LLM via OpenRouter (OpenAI-compatible) and return raw text response."""
+    # Prepend system prompt as a system message (OpenAI format)
+    openrouter_messages = [{"role": "system", "content": system}] + messages
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
         resp = await client.post(
-            ANTHROPIC_API_URL,
-            headers={"Content-Type": "application/json"},
+            OPENROUTER_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {API_KEY}",
+            },
             json={
                 "model": MODEL,
-                "max_tokens": 1024,
-                "system": system,
-                "messages": messages,
+                "max_tokens": 256,
+                "messages": openrouter_messages,
             },
         )
+        if resp.status_code != 200:
+            logger.error(f"LLM API error {resp.status_code}: {resp.text[:500]}")
         resp.raise_for_status()
         data = resp.json()
-        return "".join(
-            block["text"]
-            for block in data.get("content", [])
-            if block.get("type") == "text"
-        )
+        # OpenAI-compatible response: choices[0].message.content
+        content = data["choices"][0]["message"].get("content") or ""
+        return content
 
 
 # ── Response parser ───────────────────────────────────────────────────────────
@@ -188,10 +194,14 @@ def _parse_llm_response(
     # Build a local lookup from the retrieval results (for priority)
     local_lookup = {item["name"].lower(): item for item in catalog_items}
 
-    # Try fenced JSON block first, then bare JSON
-    json_match = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    # Try fenced JSON block first (greedy to capture full nested JSON), then bare JSON
+    json_match = re.search(r"```json\s*(\{.*\})\s*```", raw, re.DOTALL)
     if not json_match:
-        json_match = re.search(r'(\{"recommendations"\s*:.*?\})', raw, re.DOTALL)
+        # Try bare JSON block — look for outermost { ... } containing "recommendations"
+        json_match = re.search(r'(\{"recommendations"\s*:.*\})', raw, re.DOTALL)
+    if not json_match:
+        # Try without fenced block — just find any JSON object with recommendations key
+        json_match = re.search(r'(\{[^{}]*"recommendations"\s*:\s*\[.*?\][^{}]*\})', raw, re.DOTALL)
 
     reply_text = raw
     recs: List[Recommendation] = []
@@ -243,6 +253,9 @@ def _parse_llm_response(
 
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.warning(f"JSON parse error in LLM response: {exc}")
+            logger.debug(f"Raw JSON match was: {json_match.group(1)[:500]}")
+    else:
+        logger.debug(f"No JSON block found in LLM response (first 500 chars): {raw[:500]}")
 
     # If JSON block was absent, return full raw text as reply with no recs
     return reply_text or raw, recs, eoc
@@ -294,15 +307,54 @@ async def run_chat(messages: List[Message]) -> ChatResponse:
     if catalog_context:
         system = SYSTEM_PROMPT + "\n\n" + catalog_context
 
-    # 5. Convert to Anthropic message format
-    anthropic_messages = [{"role": m.role, "content": m.content} for m in messages]
+    # 5. Convert to OpenAI-compatible message format
+    chat_messages = [
+        {
+            "role": "assistant" if m.role == "assistant" else "user",
+            "content": m.content,
+        }
+        for m in messages
+    ]
 
-    # 6. LLM call
-    raw = await _call_llm(system, anthropic_messages)
-    logger.debug(f"LLM raw (first 300): {raw[:300]}")
+    # 6. LLM call — with specific exception handling
+    llm_failed = False
+    try:
+        raw = await _call_llm(system, chat_messages)
+        logger.debug(f"LLM raw (first 300): {raw[:300]}")
+    except httpx.TimeoutException:
+        logger.error("LLM call timed out")
+        raw = "I'm taking longer than expected to process your request. However, based on your criteria, here are some matching assessments from our catalog:"
+        llm_failed = True
+    except httpx.HTTPStatusError as exc:
+        logger.error(f"LLM HTTP error {exc.response.status_code}: {exc.response.text[:300]}")
+        raw = "I'm experiencing a temporary issue connecting to my backend LLM. However, I found these matching assessments for you based on a semantic search:"
+        llm_failed = True
 
     # 7. Parse response
-    reply, recs, eoc = _parse_llm_response(raw, catalog_items)
+    if not llm_failed:
+        try:
+            reply, recs, eoc = _parse_llm_response(raw, catalog_items)
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            logger.warning(f"Failed to parse LLM response: {exc}")
+            reply = raw  # fall back to raw text as reply
+            recs = []
+            eoc = False
+    else:
+        reply, recs, eoc = raw, [], False
+
+    # Robust Fallback: If LLM failed or missed the JSON block on a recommendation intent, use BM25 directly
+    if not recs and intent in ("RECOMMEND", "REFINE", "COMPARE") and catalog_items:
+        logger.warning("No recommendations parsed from LLM. Falling back to direct BM25 semantic search results.")
+        if not llm_failed:
+            reply = "Here are the top recommendations based on your criteria:"
+        for item in catalog_items[:3]:  # Top 3 from BM25
+            recs.append(
+                Recommendation(
+                    name=item["name"],
+                    url=item["url"],
+                    test_type="|".join(item.get("test_types", [])) or "Unknown"
+                )
+            )
 
     # 8. Safety overrides
     if intent == "VAGUE":

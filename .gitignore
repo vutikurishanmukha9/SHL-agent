@@ -76,9 +76,7 @@ node_modules/
 secrets.json
 credentials.json
 
-data/shl_catalog.json
-data/faiss.index
-data/metadata.pkl
+# data/shl_catalog.json  # Intentionally tracked — needed for deployment
 shl_catalog_checkpoint_50.json
 shl_catalog_checkpoint_100.json
 shl_catalog_checkpoint_150.json

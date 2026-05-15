@@ -12,7 +12,7 @@ BASE_URL = "http://localhost:8000"
 
 
 def chat(messages: list) -> dict:
-    resp = httpx.post(f"{BASE_URL}/chat", json={"messages": messages}, timeout=35)
+    resp = httpx.post(f"{BASE_URL}/chat", json={"messages": messages}, timeout=60)
     resp.raise_for_status()
     return resp.json()
 

@@ -32,7 +32,7 @@ def _load_catalog() -> List[Dict]:
     if not path.exists():
         # fallback: look next to this file
         path = Path(__file__).parent / "shl_catalog.json"
-    with open(path) as f:
+    with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
     cleaned = []
