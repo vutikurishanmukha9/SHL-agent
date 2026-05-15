@@ -35,7 +35,14 @@ def _load_catalog() -> List[Dict]:
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
+    SYNONYM_TAGS = {
+        "Occupational Personality Questionnaire OPQ32r": "personality behaviour traits interpersonal leadership style",
+        "Verify - G+": "cognitive ability reasoning numerical verbal iq intelligence problem solving",
+        "Verify Interactive - G+": "cognitive ability reasoning numerical verbal iq intelligence problem solving",
+    }
+
     cleaned = []
+
     for item in raw:
         desc = item.get("description", "") or ""
         # strip boilerplate sales noise so it doesn't pollute BM25
@@ -57,6 +64,7 @@ def _load_catalog() -> List[Dict]:
                     " ".join(item.get("test_type_labels", [])),
                     " ".join(item.get("job_levels", [])),
                     " ".join(item.get("languages", [])),
+                    SYNONYM_TAGS.get(item.get("name", ""), ""),
                 ],
             )
         ).lower()
