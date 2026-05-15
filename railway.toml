@@ -1,0 +1,10 @@
+[build]
+# Railway automatically detects Python, but defining NIXPACKS ensures a standard build environment
+builder = "NIXPACKS"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+# Standard uvicorn start command targeting the host and dynamic PORT assigned by Railway
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: shl-agent
+    env: python
+    region: oregon # You can change this to your preferred region (e.g., frankfurt)
+    plan: free # Free tier is usually sufficient for testing
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false # Tells Render not to commit this value, you will enter it in the dashboard
+      - key: OPENROUTER_MODEL
+        value: "google/gemini-2.5-flash" # Change to google/gemma-4-31b-it:free if you are out of credits
