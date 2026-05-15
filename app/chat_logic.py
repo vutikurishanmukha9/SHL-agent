@@ -21,6 +21,7 @@ import json
 import os
 import logging
 import httpx
+import asyncio
 from typing import List, Dict, Optional, Tuple
 from dotenv import load_dotenv
 from app.models import Message, ChatResponse, Recommendation
@@ -153,26 +154,59 @@ async def _call_llm(system: str, messages: List[Dict]) -> str:
     # Prepend system prompt as a system message (OpenAI format)
     openrouter_messages = [{"role": "system", "content": system}] + messages
 
+    fallback_model = os.getenv("OPENROUTER_FALLBACK_MODEL", "google/gemma-4-31b-it:free")
+    models_to_try = [MODEL, fallback_model]
+
+    last_exception = None
+
     async with httpx.AsyncClient(timeout=25.0) as client:
-        resp = await client.post(
-            OPENROUTER_API_URL,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {API_KEY}",
-            },
-            json={
-                "model": MODEL,
-                "max_tokens": 800,
-                "messages": openrouter_messages,
-            },
-        )
-        if resp.status_code != 200:
-            logger.error(f"LLM API error {resp.status_code}: {resp.text[:500]}")
-        resp.raise_for_status()
-        data = resp.json()
-        # OpenAI-compatible response: choices[0].message.content
-        content = data["choices"][0]["message"].get("content") or ""
-        return content
+        for model in models_to_try:
+            try:
+                resp = await client.post(
+                    OPENROUTER_API_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {API_KEY}",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": 300,
+                        "messages": openrouter_messages,
+                    },
+                )
+                
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"Model={model} failed | "
+                        f"status_code={resp.status_code} | "
+                        f"error={resp.text[:200]}"
+                    )
+                    
+                resp.raise_for_status()
+                data = resp.json()
+                # OpenAI-compatible response: choices[0].message.content
+                content = data["choices"][0]["message"].get("content") or ""
+                return content
+                
+            except httpx.HTTPStatusError as exc:
+                last_exception = exc
+                if exc.response.status_code in [402, 429, 500, 502, 503, 504]:
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    # Do not retry on 401 Unauthorized or 400 Bad Request
+                    break
+            except Exception as exc:
+                logger.warning(
+                    f"Model={model} failed | "
+                    f"type={type(exc).__name__} | "
+                    f"error={str(exc)}"
+                )
+                last_exception = exc
+                await asyncio.sleep(1)
+                continue
+
+    raise last_exception or RuntimeError("All LLM providers failed")
 
 
 # ── Response parser ───────────────────────────────────────────────────────────
@@ -332,6 +366,10 @@ async def run_chat(messages: List[Message]) -> ChatResponse:
         llm_failed = True
     except httpx.HTTPStatusError as exc:
         logger.error(f"LLM HTTP error {exc.response.status_code}: {exc.response.text[:300]}")
+        raw = "I'm experiencing a temporary issue connecting to my backend LLM. However, I found these matching assessments for you based on a semantic search:"
+        llm_failed = True
+    except Exception as exc:
+        logger.error(f"All LLMs failed: {exc}")
         raw = "I'm experiencing a temporary issue connecting to my backend LLM. However, I found these matching assessments for you based on a semantic search:"
         llm_failed = True
 
