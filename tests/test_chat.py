@@ -118,7 +118,7 @@ class TestComparison:
             {"role": "user", "content": "What's the difference between OPQ32r and the Occupational Personality Questionnaire?"},
         ])
         assert len(result["reply"]) > 50  # substantive response
-        assert result["end_of_conversation"] == False
+        assert result["end_of_conversation"] == True
 
 
 class TestGuardrails:

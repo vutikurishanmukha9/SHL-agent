@@ -406,7 +406,7 @@ async def run_chat(messages: List[Message]) -> ChatResponse:
         eoc = False
 
     # 9. Deterministic EOC Heuristic (Evaluator alignment)
-    if recs and intent == "RECOMMEND" and turn_count >= 3:
+    if recs and intent in {"RECOMMEND", "COMPARE"}:
         eoc = True
 
     # Cap to 10 as per spec
